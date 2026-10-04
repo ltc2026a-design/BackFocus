@@ -1,0 +1,33 @@
+{
+  "name": "focusflow-backend",
+  "version": "1.0.0",
+  "description": "FocusFlow productivity app backend (Express + Prisma + SQLite)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch server.js",
+    "start": "node --env-file-if-exists=.env server.js",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "seed": "prisma db seed",
+    "check:notifs": "node --env-file-if-exists=.env scripts/check-notifs.js",
+    "test": "node tests/run-tests.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "express": "^4.22.3",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.0.14",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3"
+  }
+}

@@ -1,0 +1,270 @@
+// ============================================================================
+// FocusFlow — Prisma Schema
+// ----------------------------------------------------------------------------
+// DESARROLLO: se usa SQLite (archivo backend/prisma/dev.db) porque el entorno
+// no tiene PostgreSQL ni Docker instalados.
+//
+// PARA CAMBIAR A POSTGRESQL:
+//   1. En el bloque `datasource db` cambia  provider = "sqlite"
+//      por  provider = "postgresql".
+//   2. En el archivo .env cambia DATABASE_URL por una URL de Postgres, p.ej.:
+//        DATABASE_URL="postgresql://usuario:password@localhost:5432/focusflow?schema=public"
+//   3. Ejecuta:  npx prisma migrate dev --name init  (o `npm run prisma:migrate`)
+//      y luego   npx prisma db seed
+//
+// NOTA: SQLite no soporta `enum` nativos de Prisma, por eso los enums del
+// contrato (Quadrant, TaskStatus, etc.) se modelan como String y se validan
+// con zod en la capa de API. Al migrar a PostgreSQL puedes convertirlos en
+// enums reales si lo deseas.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // cambiar a "postgresql" en producción (ver README.md)
+  url      = env("DATABASE_URL")
+}
+
+// --- Enums (como String, validados con zod) -------------------------------
+// Quadrant:        urgente_importante | urgente_no_importante | no_urgente_importante | no_urgente_no_importante
+// TaskStatus:      pendiente | en_progreso | completada | eliminada
+// ProjectStatus:   activo | pausado | completado | archivado
+// PomodoroType:    trabajo | descanso
+// PomodoroState:   activa | pausada | completada | cancelada
+// PaymentStatus:   pendiente | completado | fallido | reembolsado
+// PaymentMethod:   tarjeta | paypal | transferencia
+// PlanType:        free | pro_mensual | pro_anual | lifetime
+// NotificationType: info | warning | deadline | payment
+
+model Usuario {
+  id             String   @id @default(cuid())
+  nombre         String
+  email          String   @unique
+  passwordHash   String
+  rol            String   @default("USER") // USER | ADMIN
+  zonaHoraria    String   @default("UTC")
+  temaPreferido  String   @default("light")
+  avatarUrl      String? // data URL (base64) del foto de perfil
+  aceptaTerminos Boolean  @default(false)
+  terminosAceptadoEn DateTime?
+  creadoEn       DateTime @default(now())
+
+  proyectos        Proyecto[]
+  tareas           Tarea[]
+  sesionesPomodoro SesionPomodoro[]
+  bloquesTiempo    BloqueTiempo[]
+  eventosHistorial EventoHistorial[]
+  notificaciones   Notificacion[]
+  metricasDiarias  MetricaDiaria[]
+  pagos            Pago[]
+  suscripcion      Suscripcion?
+  refreshTokens    RefreshToken[]
+  resetTokens      PasswordResetToken[]
+}
+
+model Proyecto {
+  id          String   @id @default(cuid())
+  usuarioId   String
+  titulo      String
+  descripcion String?
+  estado      String   @default("activo") // activo | pausado | completado | archivado
+  creadoEn    DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tareas  Tarea[]
+
+  @@index([usuarioId])
+}
+
+model Tarea {
+  id                 String    @id @default(cuid())
+  usuarioId          String
+  proyectoId         String?
+  titulo             String
+  descripcion        String?
+  cuadrante          String // urgente_importante | urgente_no_importante | no_urgente_importante | no_urgente_no_importante
+  estado             String    @default("pendiente") // pendiente | en_progreso | completada | eliminada
+  fechaLimite        DateTime?
+  tiempoEstimadoMin  Int?
+  creadoEn           DateTime  @default(now())
+  completadaEn       DateTime?
+
+  usuario          Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  proyecto         Proyecto?         @relation(fields: [proyectoId], references: [id], onDelete: SetNull)
+  microTareas      MicroTarea[]
+  sesionesPomodoro SesionPomodoro[]
+  bloquesTiempo    BloqueTiempo[]
+
+  @@index([usuarioId])
+  @@index([proyectoId])
+}
+
+model MicroTarea {
+  id         String   @id @default(cuid())
+  tareaId    String
+  titulo     String
+  completada Boolean  @default(false)
+  orden      Int      @default(0)
+  creadoEn   DateTime @default(now())
+
+  tarea Tarea @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+
+  @@index([tareaId])
+}
+
+model SesionPomodoro {
+  id                  String    @id @default(cuid())
+  usuarioId           String
+  tareaId             String?
+  inicio              DateTime  @default(now())
+  fin                 DateTime?
+  duracionPlaneadaMin Int
+  duracionRealMin     Int?
+  tipo                String    @default("trabajo") // trabajo | descanso
+  estado              String    @default("activa") // activa | pausada | completada | cancelada
+  completada          Boolean   @default(false)
+  // Campos internos para acumular tiempo entre pausas/reanudaciones:
+  tiempoAcumuladoMin  Int       @default(0)
+  reanudadoEn         DateTime?
+
+  usuario Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tarea   Tarea?   @relation(fields: [tareaId], references: [id], onDelete: SetNull)
+
+  @@index([usuarioId])
+  @@index([tareaId])
+}
+
+model BloqueTiempo {
+  id         String @id @default(cuid())
+  usuarioId  String
+  tareaId    String
+  fecha      String // "YYYY-MM-DD"
+  horaInicio String // "HH:MM"
+  horaFin    String // "HH:MM"
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tarea   Tarea   @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, fecha])
+  @@index([tareaId])
+}
+
+model EventoHistorial {
+  id          String   @id @default(cuid())
+  usuarioId   String
+  entidadTipo String // tarea | micro_tarea | proyecto | pomodoro | pago | auth ...
+  entidadId   String
+  accion      String // crear | editar | eliminar | completar | cambiar_cuadrante | ...
+  detalle     String?
+  creadoEn    DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, creadoEn])
+}
+
+model Notificacion {
+  id              String    @id @default(cuid())
+  usuarioId       String
+  tipo            String // info | warning | deadline | payment
+  mensaje         String
+  leida           Boolean   @default(false)
+  programadaPara  DateTime?
+  creadoEn        DateTime  @default(now())
+  // tareaId se usa SOLO para no duplicar notificaciones `deadline` (no se expone en la API)
+  tareaId         String?
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, leida])
+}
+
+model MetricaDiaria {
+  id                  String @id @default(cuid())
+  usuarioId           String
+  fecha               String // "YYYY-MM-DD"
+  tareasCompletadas   Int    @default(0)
+  tiempoEstimadoMin   Int    @default(0)
+  tiempoRealMin       Int    @default(0)
+  sesionesCompletadas Int    @default(0)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, fecha])
+}
+
+model Plan {
+  id            String  @id @default(cuid())
+  tipo          String  @unique // free | pro_mensual | pro_anual | lifetime
+  nombre        String
+  precioMensual Float
+  precioAnual   Float?
+  descripcion   String?
+  caracteristicas String @default("[]") // JSON string: string[]
+}
+
+model Pago {
+  id             String   @id @default(cuid())
+  usuarioId      String
+  planTipo       String // free | pro_mensual | pro_anual | lifetime
+  monto          Float
+  moneda         String   @default("USD")
+  metodo         String // tarjeta | paypal | transferencia
+  ciclo          String // mensual | anual | unico
+  estado         String // pendiente | completado | fallido | reembolsado
+  referencia     String   @unique
+  detalleTarjeta String? // JSON string: { ultimos4, marca } — NUNCA la tarjeta completa
+  creadoEn       DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+}
+
+model Suscripcion {
+  id        String    @id @default(cuid())
+  usuarioId String    @unique
+  planTipo  String
+  activa    Boolean   @default(true)
+  desde     DateTime  @default(now())
+  hasta     DateTime?
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  usuarioId String
+  token     String   @unique
+  expiraEn  DateTime
+  revocado  Boolean  @default(false)
+  creadoEn  DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  usuarioId String
+  tokenHash String   @unique // SHA-256 del token enviado por email
+  expiraEn  DateTime
+  usado     Boolean  @default(false)
+  creadoEn  DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+}
+
+model IntentoLogin {
+  id       String   @id @default(cuid())
+  email    String
+  exitoso  Boolean
+  creadoEn DateTime @default(now())
+
+  @@index([email, creadoEn])
+}
