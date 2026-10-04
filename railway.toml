@@ -10,9 +10,9 @@ builder = "NIXPACKS"
 buildCommand = "npm install && npx prisma generate"
 
 [deploy]
-# Sincroniza el esquema con la base y luego levanta el API. Usamos `db push`
-# (no `migrate deploy`) porque el proyecto trabaja con SQLite sobre un Volumen y
-# la única migración commiteada quedó desactualizada respecto al schema.
-startCommand = "npx prisma db push --skip-generate && node --env-file-if-exists=.env server.js"
+# El arranque NO toca la base: `prisma db push` se corre como comando puntual
+# desde el shell del servicio cuando el schema cambia. Así el inicio depende solo
+# del proceso Node y no falla si el Volumen está lento.
+startCommand = "node --env-file-if-exists=.env server.js"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
