@@ -108,13 +108,28 @@ async function estaBloqueado(email) {
   return fallos >= MAX_INTENTOS;
 }
 
+/**
+ * El correo se guardaba tal cual se escribió, así que "Juan@x.com" y
+ * "juan@x.com" son cuentas distintas y un login/reset fallaba en silencio.
+ * Se buscan las variantes razonables y desde el registro se guarda en minúsculas.
+ */
+async function encontrarUsuarioPorEmail(email) {
+  const crudo = String(email ?? "");
+  const variantes = [...new Set([crudo, crudo.trim(), crudo.trim().toLowerCase()])];
+  const encontrado = await prisma.usuario.findFirst({
+    where: { email: { in: variantes } },
+  });
+  return encontrado ?? null;
+}
+
 // POST /auth/register → 201 { user, accessToken, refreshToken }
 authRouter.post(
   "/register",
   validate(registerSchema),
   asyncHandler(async (req, res) => {
     const { nombre, email, password } = req.body;
-    const existente = await prisma.usuario.findUnique({ where: { email } });
+    const emailNormalizado = String(email).trim().toLowerCase();
+    const existente = await encontrarUsuarioPorEmail(emailNormalizado);
     if (existente) {
       throw new ApiError(400, "EMAIL_EXISTS", "El email ya está registrado");
     }
@@ -122,7 +137,7 @@ authRouter.post(
     const usuario = await prisma.usuario.create({
       data: {
         nombre,
-        email,
+        email: emailNormalizado,
         passwordHash,
         rol: "USER",
         aceptaTerminos: true,
@@ -152,7 +167,7 @@ authRouter.post(
       );
     }
 
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    const usuario = await encontrarUsuarioPorEmail(email);
     const passwordOk =
       usuario && (await bcrypt.compare(password, usuario.passwordHash));
 
@@ -201,29 +216,44 @@ authRouter.post(
   })
 );
 
-// POST /auth/forgot-password → 202 siempre (no revela si el email existe)
+// POST /auth/forgot-password
+// A diferencia del diseño habitual (202 siempre), aquí sí se avisa cuando el
+// correo no está registrado: sin correo real configurado, un 202 de cortesía
+// deja al usuario esperando un email que nunca llega.
 authRouter.post(
   "/forgot-password",
   validate(forgotSchema),
   asyncHandler(async (req, res) => {
     const { email } = req.body;
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
-    if (usuario) {
-      const raw = crypto.randomBytes(32).toString("hex");
-      const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
-      await prisma.passwordResetToken.create({
-        data: {
-          usuarioId: usuario.id,
-          tokenHash,
-          expiraEn: new Date(Date.now() + 30 * 60 * 1000), // 30 min
-        },
-      });
-      await sendPasswordReset({
-        user: { nombre: usuario.nombre, email: usuario.email },
-        token: raw,
-      });
+    const usuario = await encontrarUsuarioPorEmail(email);
+    if (!usuario) {
+      throw new ApiError(404, "EMAIL_NOT_FOUND", "Ese correo no está registrado en FocusFlow");
     }
-    res.status(202).json({ ok: true });
+    const raw = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
+    await prisma.passwordResetToken.create({
+      data: {
+        usuarioId: usuario.id,
+        tokenHash,
+        expiraEn: new Date(Date.now() + 30 * 60 * 1000), // 30 min
+      },
+    });
+    const envio = await sendPasswordReset({
+      user: { nombre: usuario.nombre, email: usuario.email },
+      token: raw,
+    });
+    if (!envio.delivered) {
+      // El token ya existe: el enlace queda en el log para poder recuperarlo.
+      console.error(`[auth] enlace de restablecimiento generado para ${usuario.email} pero el correo no se envió`);
+      throw new ApiError(
+        envio.sim ? 503 : 502,
+        envio.sim ? "MAIL_NOT_CONFIGURED" : "MAIL_SEND_FAILED",
+        envio.sim
+          ? "El servidor no tiene un correo (SMTP) configurado, no se pudo enviar el enlace"
+          : "El correo no se pudo enviar, intenta de nuevo en unos minutos"
+      );
+    }
+    res.json({ ok: true, email: usuario.email });
   })
 );
 

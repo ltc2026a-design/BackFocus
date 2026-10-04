@@ -10,7 +10,8 @@
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "prisma db seed",
     "check:notifs": "node --env-file-if-exists=.env scripts/check-notifs.js",
-    "test": "node tests/run-tests.js"
+    "test": "node tests/run-tests.js",
+    "check:smtp": "node --env-file-if-exists=.env scripts/check-smtp.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
