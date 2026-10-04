@@ -30,7 +30,13 @@ export const config = {
     secure: String(process.env.SMTP_SECURE || "false") === "true",
     user: process.env.SMTP_USER || "",
     pass: process.env.SMTP_PASS || "",
-    from: process.env.MAIL_FROM || "FocusFlow <no-reply@focusflow.app>",
+    // MAIL_FROM es opcional: por defecto se envía desde la misma cuenta de SMTP_USER
+    // (Gmail rechaza el envío si el "desde" no es la cuenta autenticada).
+    from:
+      process.env.MAIL_FROM ||
+      (process.env.SMTP_USER
+        ? `FocusFlow <${process.env.SMTP_USER}>`
+        : "FocusFlow <no-reply@focusflow.app>"),
     appUrl: process.env.APP_URL || "http://localhost:5173",
   },
 };
