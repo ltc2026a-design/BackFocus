@@ -1,0 +1,21 @@
+# FocusFlow backend — configuración de despliegue en Railway
+# https://docs.railway.app/deploy/config-as-code
+#
+# Los VALORES sensibles (JWT_SECRET, DATABASE_URL, SMTP_PASS, CORS_ORIGINS, etc.)
+# se ponen en el panel: Service → Variables — NO en este archivo.
+
+[build]
+builder = "NIXPACKS"
+# Prisma necesita generar el cliente antes de arrancar.
+buildCommand = "npm install && npx prisma generate"
+
+[deploy]
+# Sincroniza el esquema con la base y luego levanta el API. Usamos `db push`
+# (no `migrate deploy`) porque el proyecto trabaja con SQLite sobre un Volumen y
+# la única migración commiteada quedó desactualizada respecto al schema.
+startCommand = "npx prisma db push --skip-generate && node --env-file-if-exists=.env server.js"
+# Endpoint público para readiness (devuelve 200 sin auth).
+healthcheckPath = "/api/payments/plans"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
