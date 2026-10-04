@@ -23,7 +23,7 @@ export function createApp() {
   app.use(helmet());
   app.use(
     cors({
-      origin: config.corsOrigins, // http://localhost:5173 y http://localhost:1420 (tauri)
+      origin: config.corsOrigins, // web (Vite/Tauri) + WebView de la app móvil
       credentials: true,
     })
   );

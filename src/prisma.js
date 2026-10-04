@@ -9,12 +9,20 @@ export const config = {
     process.env.JWT_REFRESH_SECRET || "focusflow-dev-refresh-secret-change-me",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "30m",
   jwtRefreshExpiresDays: Number(process.env.JWT_REFRESH_EXPIRES_DAYS || 7),
-  corsOrigins: (
-    process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:1420"
-  )
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean),
+  // Orígenes de la WebView nativa (Capacitor). Son fijos y no dependen del
+  // despliegue, así que se suman siempre: sin ellos la app de celular no puede
+  // hablar con la API aunque CORS_ORIGINS esté bien configurado.
+  corsOrigins: [
+    ...new Set([
+      ...(process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:1420")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      "https://localhost", // Android (androidScheme https, por defecto)
+      "http://localhost", // Android con androidScheme http
+      "capacitor://localhost", // iOS
+    ]),
+  ],
   // SMTP (emails reales). Si SMTP_HOST no está, el mailer corre en modo "sim".
   smtp: {
     host: process.env.SMTP_HOST || "",
