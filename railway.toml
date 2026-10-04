@@ -13,6 +13,9 @@ buildCommand = "npm install && npx prisma generate"
 # El arranque NO toca la base: `prisma db push` se corre como comando puntual
 # desde el shell del servicio cuando el schema cambia. Así el inicio depende solo
 # del proceso Node y no falla si el Volumen está lento.
-startCommand = "node --env-file-if-exists=.env server.js"
+# OJO: sin `--env-file-if-exists`. Ese flag necesita Node >= 22.9 y Railway puede
+# compilar con un Node más viejo (`node: bad option` => servicio parado, 502
+# permanente). En Railway las variables ya vienen del entorno real del contenedor.
+startCommand = "node server.js"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
