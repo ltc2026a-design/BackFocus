@@ -20,6 +20,10 @@ export function createApp() {
   const app = express();
 
   app.disable("x-powered-by");
+  // Railway (y cualquier PaaS) termina TLS en un proxy y añade X-Forwarded-For.
+  // Sin esto express-rate-limit rechaza la IP del proxy y suelta
+  // ERR_ERL_UNEXPECTED_X_FORWARDED_FOR en cada petición.
+  app.set("trust proxy", 1);
   app.use(helmet());
   app.use(
     cors({
